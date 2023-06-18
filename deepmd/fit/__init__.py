@@ -4,6 +4,9 @@ from .dipole import (
 from .dos import (
     DOSFitting,
 )
+from .avec import (
+    AVecFitting,
+)
 from .ener import (
     EnerFitting,
 )
@@ -19,6 +22,7 @@ __all__ = [
     "DipoleFittingSeA",
     "EnerFitting",
     "DOSFitting",
+    "AVecFitting",
     "GlobalPolarFittingSeA",
     "PolarFittingSeA",
     "Fitting",
