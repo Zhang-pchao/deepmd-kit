@@ -225,6 +225,8 @@ int main(int argc, char* argv[]) {
       writebuffer_(&socket, (char*)(&cbuf), sizeof(int32_t));
       writebuffer_(&socket, msg_nothing, 7);
       hasdata = false;
+    } else if (header_str == "EXIT") {
+      break;
     } else {
       std::cerr << "unexpected header " << std::endl;
       return 1;
