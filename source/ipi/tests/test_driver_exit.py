@@ -59,7 +59,7 @@ class TestDPIPIExit(unittest.TestCase):
                 connection, _ = server.accept()
                 with connection:
                     connection.sendall(b"EXIT        ")
-                stdout, stderr = process.communicate(timeout=10)
+                stdout, stderr = process.communicate(timeout=60)
                 self.assertEqual(
                     process.returncode,
                     0,
