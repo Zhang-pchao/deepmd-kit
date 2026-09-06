@@ -179,6 +179,12 @@ int main(int argc, char* argv[]) {
 
       // get number of atoms
       readbuffer_(&socket, (char*)(&cbuf), sizeof(int32_t));
+      if (cbuf <= 0 || static_cast<size_t>(cbuf) != dtype.size()) {
+        std::cerr << "dp_ipi: POSDATA atom count " << cbuf
+                  << " does not match configured atom count " << dtype.size()
+                  << "." << std::endl;
+        return 1;
+      }
       if (natoms < 0) {
         natoms = cbuf;
         if (b_verb) {
