@@ -78,3 +78,7 @@ target_compile_definitions(
 # register styles
 registerstyles(${CMAKE_CURRENT_LIST_DIR})
 generatestyleheaders(${LAMMPS_STYLE_HEADERS_DIR})
+# Newer LAMMPS registers named styles through generated source files.
+if(COMMAND GenerateStyleSources)
+  generatestylesources(${LAMMPS_STYLE_HEADERS_DIR})
+endif()
