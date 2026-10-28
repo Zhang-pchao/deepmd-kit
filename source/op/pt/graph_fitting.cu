@@ -92,15 +92,10 @@ void gemm_nt(cudaStream_t stream,
               a, k, &beta, c, n);
 }
 
-// sigma(z) = (1 + tanh(z/2)) / 2. The identity is not the detour it looks
-// like: CUDA's tanhf is a branch-free sequence of one MUFU.EX2 and one
-// MUFU.RCP, whereas an accurate expf carries a branchy slow path and the
-// intrinsic __expf still needs a reciprocal to finish the sigmoid. Measured
-// per kernel instance at one million nodes, the identity beats both, and the
-// only faster form is fully approximate, worth 0.5% of the fitting forward
-// against an approximate division and exponential.
+// Evaluate SiLU through its exponential form. The tanh identity cancels
+// small negative-tail values in fp32, affecting both energies and forces.
 __device__ __forceinline__ float sigmoid(float z) {
-  return 0.5f * (1.f + tanhf(0.5f * z));
+  return 1.f / (1.f + expf(-z));
 }
 
 // Activation codes follow
@@ -112,7 +107,7 @@ __device__ __forceinline__ float act_value(float z) {
   if constexpr (ACT == 0) {
     return tanhf(z);
   }
-  return z * sigmoid(z);
+  return z / (1.f + expf(-z));
 }
 
 template <int ACT>
