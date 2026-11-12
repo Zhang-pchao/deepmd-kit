@@ -72,3 +72,36 @@ def test_cpp_interface_respects_tensorflow_selection(
         assert "-DBUILD_CPP_IF:BOOL=FALSE" in args
         assert "-DUSE_TF_PYTHON_LIBS:BOOL=TRUE" not in args
     assert ("dp_ipi" in scripts) == (interface == "ipi")
+
+
+def test_project_milestone_tags_preserve_package_version(tmp_path):
+    import subprocess
+    from setuptools_scm import get_version
+
+    try:
+        import tomllib
+    except ImportError:
+        import tomli as tomllib
+
+    root = Path(__file__).resolve().parents[2]
+    config = tomllib.loads((root / "pyproject.toml").read_text())["tool"][
+        "setuptools_scm"
+    ]
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    for arguments in (
+        ["init"],
+        ["config", "user.name", "Version test"],
+        ["config", "user.email", "version@example.invalid"],
+        ["commit", "--allow-empty", "-m", "Initial version"],
+        ["tag", "v3.2.0"],
+        ["commit", "--allow-empty", "-m", "Project integration"],
+        ["tag", "plm-pimd-api31-v1"],
+    ):
+        subprocess.run(
+            ["git", "-C", str(repository), *arguments], check=True, capture_output=True
+        )
+    version = get_version(
+        root=repository, git_describe_command=config["git_describe_command"]
+    )
+    assert version.startswith("3.2.1.dev1+")
