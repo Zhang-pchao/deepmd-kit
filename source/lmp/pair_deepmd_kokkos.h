@@ -25,6 +25,7 @@ PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 #include "kokkos_type.h"
 #include "neigh_list_kokkos.h"
 #include "pair_deepmd.h"
+#include "selected_energy_model_kokkos.h"
 
 namespace LAMMPS_NS {
 
@@ -64,6 +65,8 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
 
   void compute(int, int) override;
   void init_style() override;
+  void settings(int, char**) override;
+  void* extract(const char*, int&) override;
   // Fold extended (ghost) node outputs onto their owners. The KOKKOS package
   // forces 'newton off' with a full neighbor list, disabling the integrator's
   // automatic reverse communication, so the extended multi-domain path drives
@@ -89,6 +92,18 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   const double* model_node_positions();
 
  protected:
+  int get_model_device() override;
+  bool compute_pimd_reuse();
+  std::string reuse_fix_id, reuse_fallback_reason;
+  int reuse_mode = 0;  // 0: full/default, 1: verify, 2: fallback
+  std::array<double, 12> reuse_stats{};
+  // force calls, native full, full reference, selected reference, selected
+  // bead, verification full, actual fallback, graph builds. Counts are per MPI
+  // rank.
+  std::array<double, 8> reuse_calls{};
+  std::array<double, 5> reuse_profile{};
+  deepmd::selected_energy::ModelEvaluator<DeviceType> selected_evaluator;
+
   // Model node set and, for a compact canonical artifact, the graph itself.
   CompactCanonicalGraphKokkos<DeviceType> compact_graph;
   Kokkos::View<int*, DeviceType>

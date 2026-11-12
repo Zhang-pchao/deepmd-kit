@@ -446,6 +446,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
   virtual bool uses_canonical_graph_inference() const;
   virtual bool canonical_graph_requires_source_csr() const;
   virtual bool has_long_range() const;
+  virtual bool supports_selected_energy() const;
 };
 
 /**
@@ -902,6 +903,9 @@ class DeepPot : public DeepBaseModel {
    * @brief Whether the loaded artifact uses the compact canonical graph ABI.
    */
   bool uses_canonical_graph_inference() const;
+  /** Whether the model supports complete-halo, one-hop selected atomic
+   * energies. */
+  bool supports_selected_energy() const;
 
   /**
    * @brief Whether every compact canonical evaluation needs the source CSR.

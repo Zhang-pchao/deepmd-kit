@@ -612,7 +612,24 @@ class DeepEval(DeepEvalBackend):
 
         # Load the AOTInductor model package (.pt2 ZIP archive).
         # Uses torch._inductor.aoti_load_package (private API, stable since PyTorch 2.6).
-        self._pt2_runner = aoti_load_package(model_file)
+        try:
+            self._pt2_runner = aoti_load_package(model_file)
+        except UnicodeDecodeError:
+            # PyTorch 2.11's load_pt2 reads every extra file as UTF-8.
+            # DeePMD also stores nested binary AOTI packages there. Preserve
+            # the archive, including its communication artifact, and use the
+            # native loader that PyTorch itself uses for its package fallback.
+            if not any(
+                name.startswith(PT2_EXTRA_PREFIX) and name.endswith(".pt2")
+                for name in names
+            ):
+                raise
+            from torch._inductor.package.package import AOTICompiledModel
+
+            loader = torch._C._aoti.AOTIModelPackageLoader(
+                model_file, "model", False, 1, -1
+            )
+            self._pt2_runner = AOTICompiledModel(loader)
         self.exported_module = None
 
         self._charge_state_fold = ChargeStateFold.load(

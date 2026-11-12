@@ -53,6 +53,7 @@ class PairDeepMD : public PairDeepBaseModel {
   double eval_energy_with_fparam(const std::vector<double>& fparam_override);
 
  protected:
+  virtual int get_model_device();
   deepmd_compat::DeepPot deep_pot;
   deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
   // Assemble the send/recv swap metadata (a comm-only neighbor list; its

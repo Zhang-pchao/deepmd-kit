@@ -428,6 +428,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool uses_canonical_graph_inference() const override;
   bool canonical_graph_requires_source_csr() const override;
   bool has_long_range() const override;
+  bool supports_selected_energy() const override;
 
  private:
   template <typename EDGE_TYPE>
@@ -546,6 +547,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   // ``has_message_passing`` metadata field; archives without it default to
   // non-message-passing.
   bool has_message_passing_ = false;
+  bool selected_energy_capable_ = false;
   // Whether the collective empty-rank preflight (allreduce of the minimum
   // owned+ghost node count over the LAMMPS communicator, graph with-comm
   // route) has PASSED for the current neighbor topology.  The preflight

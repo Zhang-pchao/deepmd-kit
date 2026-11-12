@@ -706,6 +706,7 @@ bool DeepPotBackend::canonical_graph_requires_source_csr() const {
 bool DeepPotBackend::supports_device_edge_inference() const { return false; }
 
 bool DeepPotBackend::uses_canonical_graph_inference() const { return false; }
+bool DeepPotBackend::supports_selected_energy() const { return false; }
 
 bool DeepPotBackend::has_long_range() const { return false; }
 
@@ -1088,3 +1089,7 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<float>& fparam,
     const std::vector<float>& aparam,
     const std::vector<double>& charge_spin);
+
+bool deepmd::DeepPot::supports_selected_energy() const {
+  return dp->supports_selected_energy();
+}

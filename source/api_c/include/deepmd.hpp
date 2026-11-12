@@ -1437,6 +1437,14 @@ class DeepPot : public DeepBaseModel {
   /**
    * @brief Query whether the compact canonical graph ABI is active.
    */
+  /** Query whether complete-halo one-hop selected atomic energies are
+   * supported. */
+  bool supports_selected_energy() const {
+    const bool result = DP_DeepPotSupportsSelectedEnergy(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
   bool uses_canonical_graph_inference() const {
     const bool result = DP_DeepPotUsesCanonicalGraphInference(dp);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);

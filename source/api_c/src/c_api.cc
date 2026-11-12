@@ -1862,6 +1862,15 @@ bool DP_DeepPotUsesFP32EdgeVectors(DP_DeepPot* dp) {
   }
 }
 
+bool DP_DeepPotSupportsSelectedEnergy(DP_DeepPot* dp) {
+  try {
+    return dp->dp.supports_selected_energy();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
+}
+
 bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp) {
   try {
     return dp->dp.uses_canonical_graph_inference();

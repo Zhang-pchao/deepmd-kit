@@ -543,6 +543,10 @@ extern bool DP_DeepPotUsesFP32EdgeVectors(DP_DeepPot* dp);
  */
 extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
 
+/** Query whether complete-halo one-hop selected atomic energies are supported.
+ */
+extern bool DP_DeepPotSupportsSelectedEnergy(DP_DeepPot* dp);
+
 /**
  * @brief Query whether every compact canonical evaluation reads the source
  * CSR, rather than only an evaluation that requests the per-atom virial.

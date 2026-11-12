@@ -4,7 +4,9 @@
 
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <limits>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -14,12 +16,23 @@
 #include "comm.h"
 #include "domain.h"
 #include "error.h"
+#include "fix.h"
 #include "force.h"
 #include "kokkos.h"
 #include "memory_kokkos.h"
+#include "modify.h"
 #include "neigh_list_kokkos.h"
 #include "neigh_request.h"
 #include "neighbor.h"
+#include "universe.h"
+
+#if __has_include("REPLICA/pimd_pes_view.h")
+#include "REPLICA/pimd_pes_view.h"
+#define DEEPMD_HAS_PIMD_PES_VIEW
+#elif __has_include("pimd_pes_view.h")
+#include "pimd_pes_view.h"
+#define DEEPMD_HAS_PIMD_PES_VIEW
+#endif
 
 #ifdef KOKKOS_ENABLE_CUDA
 #include <cuda_runtime.h>
@@ -46,6 +59,19 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
   datamask_read = X_MASK | TYPE_MASK | ENERGY_MASK | VIRIAL_MASK;
   datamask_modify = F_MASK | ENERGY_MASK | VIRIAL_MASK;
   reverse_comm_device = 1;
+}
+
+template <class DeviceType>
+int PairDeepMDKokkos<DeviceType>::get_model_device() {
+#ifdef KOKKOS_ENABLE_CUDA
+  if constexpr (std::is_same<DeviceType, Kokkos::Cuda>::value) {
+    // Partition-local ranks restart at zero, while Kokkos assigns devices
+    // across the parent launcher. The model must consume pointers on the
+    // device that owns the Kokkos views, not a separately inferred GPU.
+    return Kokkos::Cuda().cuda_device();
+  }
+#endif
+  return PairDeepMD::get_model_device();
 }
 
 template <class DeviceType>
@@ -174,6 +200,17 @@ template <class DeviceType>
 void PairDeepMDKokkos<DeviceType>::init_style() {
   // Base setup and the full neighbor-list request.
   PairDeepMD::init_style();
+  if (!reuse_fix_id.empty()) {
+    auto* fix = modify->get_fix_by_id(reuse_fix_id);
+    if (!fix || std::string(fix->style) != "pimd/adaptive") {
+      error->all(FLERR,
+                 "deepmd/kk pimd_reuse requires an existing pimd/adaptive fix");
+    }
+#ifndef DEEPMD_HAS_PIMD_PES_VIEW
+    error->all(FLERR,
+               "deepmd/kk was built without the PIMD PES view interface");
+#endif
+  }
 
   // The device edge path requires a GPU execution space and a single model.
   if (std::is_same<DeviceType, LMPHostType>::value) {
@@ -457,6 +494,15 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     error->all(FLERR,
                "6-element atomic virial is not supported. Use compute "
                "centroid/stress/atom command for 9-element atomic virial.");
+  }
+
+  ++reuse_calls[0];  // Monotonic force-call sequence; not the MD timestep.
+  if (reuse_mode && compute_pimd_reuse()) {
+    return;
+  }
+  ++reuse_calls[1];
+  if (reuse_mode) {
+    ++reuse_calls[6];
   }
 
   const int nlocal = atom->nlocal;
@@ -775,6 +821,8 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     }
   }
 }
+
+#include "pair_deepmd_pimd_reuse.h"
 
 namespace LAMMPS_NS {
 template class PairDeepMDKokkos<LMPDeviceType>;

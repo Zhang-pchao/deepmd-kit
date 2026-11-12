@@ -126,3 +126,49 @@ def test_composite_operator_uses_its_decomposition_for_fake_tensors() -> None:
         assert result.shape == value.shape
         assert result.dtype == value.dtype
         assert result.device == value.device
+
+
+def test_composite_operator_keeps_fake_decomposition() -> None:
+    """A composite op must execute on fake tensors without a Meta override."""
+    from torch._subclasses.fake_tensor import FakeTensorMode
+
+    name = "deepmd_tabulate_test::composite"
+    lib = torch.library.Library("deepmd_tabulate_test", "FRAGMENT")
+    lib.define("composite(Tensor x) -> Tensor")
+    lib.impl("composite", lambda x: x.sin() + x, "CompositeImplicitAutograd")
+    saved = set(tabulate_ops._registered)
+    try:
+
+        def forbidden_fake(x):
+            raise AssertionError("Composite decomposition must remain in charge")
+
+        tabulate_ops._try_register_fake(name, forbidden_fake)
+        tabulate_ops._try_register_fake(name, forbidden_fake)
+        with FakeTensorMode():
+            result = torch.ops.deepmd_tabulate_test.composite(torch.empty(2, 3))
+            assert result.shape == (2, 3)
+        assert not torch._C._dispatch_has_kernel_for_dispatch_key(name, "Meta")
+    finally:
+        tabulate_ops._registered.clear()
+        tabulate_ops._registered.update(saved)
+        lib._destroy()
+
+
+def test_noncomposite_operator_registers_fake() -> None:
+    """A noncomposite op still receives its explicit fake implementation."""
+    from torch._subclasses.fake_tensor import FakeTensorMode
+
+    name = "deepmd_tabulate_test::opaque"
+    lib = torch.library.Library("deepmd_tabulate_test", "FRAGMENT")
+    lib.define("opaque(Tensor x) -> Tensor")
+    lib.impl("opaque", lambda x: x.clone(), "CPU")
+    saved = set(tabulate_ops._registered)
+    try:
+        tabulate_ops._try_register_fake(name, lambda x: x.new_empty((3, 2)))
+        with FakeTensorMode():
+            result = torch.ops.deepmd_tabulate_test.opaque(torch.empty(2, 3))
+            assert result.shape == (3, 2)
+    finally:
+        tabulate_ops._registered.clear()
+        tabulate_ops._registered.update(saved)
+        lib._destroy()

@@ -25,6 +25,7 @@
 #include "errors.h"
 #include "longRangePTExpt.h"
 #include "neighbor_list.h"
+#include "selected_energy_capability.h"
 
 using deepmd::ptexpt::check_call_charge_spin;
 using deepmd::ptexpt::check_charge_spin_domain;
@@ -227,6 +228,18 @@ void DeepPotPTExpt::init(const std::string& model,
   std::string metadata_json = read_zip_entry(model, "extra/metadata.json");
 
   auto metadata = parse_json(metadata_json);
+  // Missing/unsupported model descriptions disable selection, not full
+  // inference.
+  selected_energy_capable_ = false;
+  try {
+    const auto definition =
+        parse_json(read_zip_entry(model, "extra/model_def_script.json"));
+    selected_energy_capable_ =
+        ptexpt::selected_energy_capability(metadata, definition);
+  } catch (const std::exception&) {
+    selected_energy_capable_ = false;
+  }
+
   rcut = metadata["rcut"].as_double();
   ntypes = metadata.obj_val.count("ntypes")
                ? metadata["ntypes"].as_int()
@@ -3121,6 +3134,10 @@ bool DeepPotPTExpt::uses_fp32_edge_vectors() const {
 bool DeepPotPTExpt::supports_device_edge_inference() const {
   return lower_input_is_edge_ || lower_input_is_graph_ ||
          lower_input_is_canonical_;
+}
+
+bool DeepPotPTExpt::supports_selected_energy() const {
+  return selected_energy_capable_ && !has_long_range();
 }
 
 bool DeepPotPTExpt::uses_canonical_graph_inference() const {
