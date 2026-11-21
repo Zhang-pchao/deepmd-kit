@@ -125,3 +125,55 @@ def test_pair_deepmd_default_fparam_explicit(lammps) -> None:
             expected_f[lammps.atoms[ii].id - 1]
         )
     lammps.run(1)
+
+
+@pytest.mark.parametrize("source", ["compute", "fix", "atom_compute"])
+def test_parameter_source_lookup(lammps, source) -> None:
+    """Read fix/compute parameters through the supported LAMMPS API."""
+    value = 0.25852028
+    lammps.unfix("1")  # Keep coordinates fixed while ave/time samples its input.
+    if source == "compute":
+        lammps.variable(f"atom_parameter atom {value}")
+        lammps.compute("parameter all reduce ave v_atom_parameter")
+        options = f"fparam_from_compute parameter aparam {value}"
+        derivative_source = "c_parameter"
+    elif source == "fix":
+        lammps.variable(f"parameter equal {value}")
+        lammps.fix("parameter all ave/time 1 1 1 v_parameter")
+        options = f"fparam_from_fix parameter aparam {value}"
+        derivative_source = "f_parameter"
+    else:
+        lammps.fix("values all property/atom d_parameter")
+        lammps.set(f"atom * d_parameter {value}")
+        lammps.compute("parameter all property/atom d_parameter")
+        options = f"fparam {value} aparam_from_compute parameter"
+        derivative_source = None
+    lammps.pair_style(f"deepmd {pth_file.resolve()} {options}")
+    lammps.pair_coeff("* *")
+    lammps.run(1)
+    if derivative_source is not None:
+        lammps.compute(f"dedn all deepmd/fparam/dedn {derivative_source}")
+        lammps.thermo_style("custom step pe c_dedn")
+    lammps.run(0)
+    assert lammps.eval("pe") == pytest.approx(expected_e)
+    for atom in lammps.atoms:
+        assert atom.force == pytest.approx(expected_f[atom.id - 1])
+    if derivative_source is not None:
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        potential = DeepPot(str(pth_file))
+        eps = 1.0e-6
+        energies = [
+            potential.eval(
+                coord.reshape(1, -1),
+                np.diag([13.0, 13.0, 13.0]).reshape(1, -1),
+                np.zeros(6, dtype=int),
+                fparam=np.array([[value + offset]]),
+                aparam=np.full((1, 6), value),
+            )[0].item()
+            for offset in [-eps, eps]
+        ]
+        reference = (energies[1] - energies[0]) / (2.0 * eps)
+        assert lammps.eval("c_dedn") == pytest.approx(reference, rel=1.0e-4, abs=1.0e-4)
