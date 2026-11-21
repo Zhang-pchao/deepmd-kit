@@ -9,10 +9,7 @@ from pathlib import (
 import numpy as np
 import pytest
 from lammps import (
-    PyLammps,
-)
-from lammps_test_utils import (
-    make_atomic_lammps,
+    lammps as Lammps,
 )
 from write_lmp_data import (
     write_lmp_data,
@@ -88,8 +85,28 @@ def teardown_module() -> None:
         os.remove(data_file)
 
 
-def _lammps(data_file, units="metal") -> PyLammps:
-    return make_atomic_lammps(data_file, units, masses=(16,))
+def _lammps(data_file) -> Lammps:
+    lmp = Lammps(cmdargs=["-log", "none", "-screen", "none"])
+    lmp.commands_list(
+        [
+            "units metal",
+            "boundary p p p",
+            "atom_style atomic",
+            "neighbor 2.0 bin",
+            "neigh_modify every 10 delay 0 check no",
+            f"read_data {data_file.resolve()}",
+            "mass 1 16",
+            "timestep 0.0005",
+            "fix 1 all nve",
+        ]
+    )
+    return lmp
+
+
+def _forces(lmp) -> np.ndarray:
+    count = lmp.extract_global("nlocal")
+    tags = lmp.numpy.extract_atom("id")[:count]
+    return lmp.numpy.extract_atom("f")[:count][np.argsort(tags)].copy()
 
 
 @pytest.fixture
@@ -101,63 +118,58 @@ def lammps():
 
 def test_pair_deepmd_default_fparam(lammps) -> None:
     """Test that model with default_fparam works without providing fparam."""
-    lammps.pair_style(f"deepmd {pth_file.resolve()} aparam 0.25852028")
-    lammps.pair_coeff("* *")
-    lammps.run(0)
-    assert lammps.eval("pe") == pytest.approx(expected_e)
-    for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(
-            expected_f[lammps.atoms[ii].id - 1]
-        )
-    lammps.run(1)
+    lammps.command(f"pair_style deepmd {pth_file.resolve()} aparam 0.25852028")
+    lammps.command("pair_coeff * *")
+    lammps.command("run 0")
+    assert lammps.get_thermo("pe") == pytest.approx(expected_e)
+    np.testing.assert_allclose(_forces(lammps), expected_f, rtol=1.0e-6, atol=1.0e-8)
+    lammps.command("run 1")
 
 
 def test_pair_deepmd_default_fparam_explicit(lammps) -> None:
     """Test that explicit fparam still works with default_fparam model."""
-    lammps.pair_style(
-        f"deepmd {pth_file.resolve()} fparam 0.25852028 aparam 0.25852028"
+    lammps.command(
+        f"pair_style deepmd {pth_file.resolve()} fparam 0.25852028 aparam 0.25852028"
     )
-    lammps.pair_coeff("* *")
-    lammps.run(0)
-    assert lammps.eval("pe") == pytest.approx(expected_e)
-    for ii in range(6):
-        assert lammps.atoms[ii].force == pytest.approx(
-            expected_f[lammps.atoms[ii].id - 1]
-        )
-    lammps.run(1)
+    lammps.command("pair_coeff * *")
+    lammps.command("run 0")
+    assert lammps.get_thermo("pe") == pytest.approx(expected_e)
+    np.testing.assert_allclose(_forces(lammps), expected_f, rtol=1.0e-6, atol=1.0e-8)
+    lammps.command("run 1")
 
 
 @pytest.mark.parametrize("source", ["compute", "fix", "atom_compute"])
 def test_parameter_source_lookup(lammps, source) -> None:
     """Read fix/compute parameters through the supported LAMMPS API."""
     value = 0.25852028
-    lammps.unfix("1")  # Keep coordinates fixed while ave/time samples its input.
+    lammps.command(
+        "unfix 1"
+    )  # Keep coordinates fixed while ave/time samples its input.
     if source == "compute":
-        lammps.variable(f"atom_parameter atom {value}")
-        lammps.compute("parameter all reduce ave v_atom_parameter")
+        lammps.command(f"variable atom_parameter atom {value}")
+        lammps.command("compute parameter all reduce ave v_atom_parameter")
         options = f"fparam_from_compute parameter aparam {value}"
         derivative_source = "c_parameter"
     elif source == "fix":
-        lammps.variable(f"parameter equal {value}")
-        lammps.fix("parameter all ave/time 1 1 1 v_parameter")
+        lammps.command(f"variable parameter equal {value}")
+        lammps.command("fix parameter all ave/time 1 1 1 v_parameter")
         options = f"fparam_from_fix parameter aparam {value}"
         derivative_source = "f_parameter"
     else:
-        lammps.fix("values all property/atom d_parameter")
-        lammps.set(f"atom * d_parameter {value}")
-        lammps.compute("parameter all property/atom d_parameter")
+        lammps.command("fix values all property/atom d_parameter")
+        lammps.command(f"set atom * d_parameter {value}")
+        lammps.command("compute parameter all property/atom d_parameter")
         options = f"fparam {value} aparam_from_compute parameter"
         derivative_source = None
-    lammps.pair_style(f"deepmd {pth_file.resolve()} {options}")
-    lammps.pair_coeff("* *")
-    lammps.run(1)
+    lammps.command(f"pair_style deepmd {pth_file.resolve()} {options}")
+    lammps.command("pair_coeff * *")
+    lammps.command("run 1")
     if derivative_source is not None:
-        lammps.compute(f"dedn all deepmd/fparam/dedn {derivative_source}")
-        lammps.thermo_style("custom step pe c_dedn")
-    lammps.run(0)
-    assert lammps.eval("pe") == pytest.approx(expected_e)
-    for atom in lammps.atoms:
-        assert atom.force == pytest.approx(expected_f[atom.id - 1])
+        lammps.command(f"compute dedn all deepmd/fparam/dedn {derivative_source}")
+        lammps.command("thermo_style custom step pe c_dedn")
+    lammps.command("run 0")
+    assert lammps.get_thermo("pe") == pytest.approx(expected_e)
+    np.testing.assert_allclose(_forces(lammps), expected_f, rtol=1.0e-6, atol=1.0e-8)
     if derivative_source is not None:
         from deepmd.infer import (
             DeepPot,
@@ -176,4 +188,6 @@ def test_parameter_source_lookup(lammps, source) -> None:
             for offset in [-eps, eps]
         ]
         reference = (energies[1] - energies[0]) / (2.0 * eps)
-        assert lammps.eval("c_dedn") == pytest.approx(reference, rel=1.0e-4, abs=1.0e-4)
+        assert lammps.extract_compute("dedn", 0, 0) == pytest.approx(
+            reference, rel=1.0e-4, abs=1.0e-4
+        )
