@@ -3137,7 +3137,11 @@ bool DeepPotPTExpt::supports_device_edge_inference() const {
 }
 
 bool DeepPotPTExpt::supports_selected_energy() const {
-  return selected_energy_capable_ && !has_long_range();
+  const bool audited_condition =
+      !charge_state_fold_ ||
+      (default_chg_spin_.size() == 2 && default_chg_spin_[0] == 0.0 &&
+       default_chg_spin_[1] == 1.0);
+  return selected_energy_capable_ && !has_long_range() && audited_condition;
 }
 
 bool DeepPotPTExpt::uses_canonical_graph_inference() const {

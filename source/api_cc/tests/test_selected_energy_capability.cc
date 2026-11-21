@@ -10,7 +10,7 @@
 using deepmd::ptexpt::parse_json;
 using deepmd::ptexpt::selected_energy_capability;
 
-TEST(SelectedEnergyCapability, RejectsUnknownOrNonlocalModels) {
+TEST(SelectedEnergyCapability, AcceptsAuditedModelsAndRejectsUnsupportedMetadata) {
   const auto meta = parse_json(R"({
     "lower_input_kind":"dpa4c_canonical","graph_edge_dtype":"float32",
     "canonical_index_dtype":"auto","canonical_index_storage":"byte_words","has_message_passing":false,
@@ -58,6 +58,43 @@ TEST(SelectedEnergyCapability, RejectsUnknownOrNonlocalModels) {
   changed.obj_val["bridging_method"] = parse_json("\"switch\"");
   EXPECT_FALSE(selected_energy_capability(meta, changed));
   EXPECT_FALSE(selected_energy_capability(parse_json("{}"), model));
+
+  auto conditioned = meta;
+  conditioned.obj_val["has_chg_spin_ebd"] = parse_json("true");
+  conditioned.obj_val["has_default_chg_spin"] = parse_json("true");
+  conditioned.obj_val["default_chg_spin"] = parse_json("[0,1]");
+  conditioned.obj_val["charge_state_constants"] =
+      parse_json(R"(["type_table","pair_table","","embedding"])");
+  auto conditioned_model = model;
+  conditioned_model.obj_val["descriptor"].obj_val["add_chg_spin_ebd"] =
+      parse_json("true");
+  conditioned_model.obj_val["descriptor"].obj_val["default_chg_spin"] =
+      parse_json("[0,1]");
+  EXPECT_TRUE(selected_energy_capability(conditioned, conditioned_model));
+  EXPECT_FALSE(selected_energy_capability(meta, conditioned_model));
+  EXPECT_FALSE(selected_energy_capability(conditioned, model));
+  for (const auto* key : {"has_default_chg_spin", "default_chg_spin",
+                          "charge_state_constants"}) {
+    changed = conditioned;
+    changed.obj_val.erase(key);
+    EXPECT_FALSE(selected_energy_capability(changed, conditioned_model)) << key;
+  }
+  for (const auto* value : {"[]", "[0]", "[0,3]", "[1,1]", "[0,1,0]",
+                            R"(["0",1])"}) {
+    changed = conditioned;
+    changed.obj_val["default_chg_spin"] = parse_json(value);
+    EXPECT_FALSE(selected_energy_capability(changed, conditioned_model)) << value;
+  }
+  changed = conditioned;
+  changed.obj_val["dim_chg_spin"] = parse_json("2");
+  EXPECT_FALSE(selected_energy_capability(changed, conditioned_model));
+  changed = conditioned;
+  changed.obj_val["charge_state_constants"] =
+      parse_json(R"(["","pair_table","","embedding"])");
+  EXPECT_FALSE(selected_energy_capability(changed, conditioned_model));
+  changed = conditioned_model;
+  changed.obj_val["descriptor"].obj_val["default_chg_spin"] = parse_json("[1,1]");
+  EXPECT_FALSE(selected_energy_capability(conditioned, changed));
 }
 #else
 TEST(SelectedEnergyCapability, BackendUnavailable) {

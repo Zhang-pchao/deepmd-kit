@@ -35,7 +35,7 @@ bool selected_energy_capability(const Json& meta, const Json& model) {
          !text(meta, "canonical_index_storage", "byte_words")) ||
         !flag(meta, "has_message_passing", false) ||
         !flag(meta, "is_spin", false) ||
-        !flag(meta, "has_chg_spin_ebd", false) || !zero(meta, "dim_fparam") ||
+        !zero(meta, "dim_fparam") ||
         !zero(meta, "dim_aparam") || !zero(meta, "dim_chg_spin") ||
         !empty(meta, "pair_exclude_types") ||
         !flag(meta, "do_atomic_virial", true)) {
@@ -74,6 +74,43 @@ bool selected_energy_capability(const Json& meta, const Json& model) {
       }
     }
     const auto& descriptor = model["descriptor"];
+    // A compressed neutral-singlet DPA4C snapshot folds its frame condition
+    // into fixed type and ordered-pair tables. It remains one-hop additive;
+    // every selected graph uses the same full-frame condition, never a
+    // charge recomputed from its selected atoms.
+    if (flag(meta, "has_chg_spin_ebd", true)) {
+      const auto neutral_singlet = [](const Json& obj, const char* key) {
+        if (!obj.has(key) || obj[key].type != Json::Array) {
+          return false;
+        }
+        const auto& value = obj[key].as_array();
+        return value.size() == 2 && value[0].type == Json::Number &&
+               value[1].type == Json::Number && value[0].as_double() == 0.0 &&
+               value[1].as_double() == 1.0;
+      };
+      if (!flag(meta, "has_default_chg_spin", true) ||
+          !neutral_singlet(meta, "default_chg_spin") ||
+          !flag(descriptor, "add_chg_spin_ebd", true) ||
+          !neutral_singlet(descriptor, "default_chg_spin") ||
+          !meta.has("charge_state_constants") ||
+          meta["charge_state_constants"].type != Json::Array) {
+        return false;
+      }
+      const auto& constants = meta["charge_state_constants"].as_array();
+      if (constants.size() != 4) {
+        return false;
+      }
+      for (std::size_t i = 0; i < constants.size(); ++i) {
+        if (constants[i].type != Json::String ||
+            (i != 2 && constants[i].as_string().empty())) {
+          return false;
+        }
+      }
+    } else if (!flag(meta, "has_chg_spin_ebd", false) ||
+               (descriptor.has("add_chg_spin_ebd") &&
+                !flag(descriptor, "add_chg_spin_ebd", false))) {
+      return false;
+    }
     if ((descriptor.has("n_blocks") &&
          descriptor["n_blocks"].as_double() != 1.0) ||
         (meta.has("has_long_range") && !flag(meta, "has_long_range", false)) ||
