@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Test LAMMPS with default_fparam (PyTorch backend)."""
 
+import importlib
 import os
 from pathlib import (
     Path,
@@ -77,6 +78,8 @@ def setup_module() -> None:
         pytest.skip(
             "Skip test because PyTorch support is not enabled.",
         )
+    # Initialize Python autograd before the LAMMPS C++ backend uses it.
+    importlib.import_module("torch")
     write_lmp_data(box, coord, type_OH, data_file)
 
 
