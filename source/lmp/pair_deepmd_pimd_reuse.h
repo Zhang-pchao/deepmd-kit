@@ -8,6 +8,7 @@ void PairDeepMDKokkos<DeviceType>::settings(int narg, char** arg) {
   reuse_mode = 0;
   reuse_stats.fill(0.0);
   reuse_calls.fill(0.0);
+  reuse_complement_calls = 0.0;
   reuse_profile.fill(0.0);
   selected_evaluator.reset_profile();
   reuse_fallback_reason.clear();
@@ -118,6 +119,10 @@ void* PairDeepMDKokkos<DeviceType>::extract(const char* name, int& dim) {
   if (std::string(name) == "pimd_reuse_device_graph_profile") {
     dim = 1;
     return const_cast<double*>(selected_evaluator.graph_profile().data());
+  }
+  if (std::string(name) == "pimd_complement_reference_calls") {
+    dim = 0;
+    return &reuse_complement_calls;
   }
   if (std::string(name) == "pimd_reuse_calls") {
     dim = 1;
@@ -309,10 +314,13 @@ bool PairDeepMDKokkos<DeviceType>::compute_pimd_reuse() {
     // Leaders do inference and neighbor search; other ranks only participate
     // in ownership and result collectives.
     if (comm->me == 0) {
-      current.reset(
-          new Neighborhood(coordinates, box, periodic, deep_pot.cutoff()));
-      reference.reset(
-          new Neighborhood(centers, box, periodic, deep_pot.cutoff()));
+      const bool host_bins = !selected_evaluator.uses_device_graph();
+      current.reset(new Neighborhood(coordinates, box, periodic,
+                                     deep_pot.cutoff(), host_bins));
+      if (universe->me == 0) {
+        reference.reset(new Neighborhood(centers, box, periodic,
+                                         deep_pot.cutoff(), host_bins));
+      }
       for (const int owner :
            selected_evaluator.affected_owners(*current, support)) {
         selected[owner] = 1;
@@ -352,22 +360,37 @@ bool PairDeepMDKokkos<DeviceType>::compute_pimd_reuse() {
   failure.clear();
   try {
     if (universe->me == 0) {
-      ++reuse_calls[2];
-      ++reuse_calls[7];
-      reuse_calls[3] += !owners.empty();
-      ++reuse_calls[7];
-      auto reference_pair = selected_evaluator.evaluate_reference_pair(
-          deep_pot, *reference, owners, types);
-      residual = std::move(reference_pair[0]);
-      const auto& selected_reference = reference_pair[1];
-      reference_energies[0] = residual.energy;
-      reference_energies[1] = selected_reference.energy;
-      residual.energy -= selected_reference.energy;
-      for (int i = 0; i < 3 * n; ++i) {
-        residual.force[i] -= selected_reference.force[i];
-      }
-      for (int d = 0; d < 9; ++d) {
-        residual.virial[d] -= selected_reference.virial[d];
+      if (reuse_mode == 2) {
+        // The affected-owner closure makes every other atomic energy
+        // independent of the physical bead displacement. Evaluate E_B(C)
+        // directly instead of subtracting E_A(C) from a full E(C).
+        std::vector<int> complement;
+        complement.reserve(n - owners.size());
+        for (int i = 0; i < n; ++i) {
+          if (!selected[i]) complement.push_back(i);
+        }
+        ++reuse_complement_calls;
+        ++reuse_calls[7];
+        residual = selected_evaluator.evaluate(deep_pot, *reference,
+                                               complement, types);
+      } else {
+        ++reuse_calls[2];
+        ++reuse_calls[7];
+        reuse_calls[3] += !owners.empty();
+        ++reuse_calls[7];
+        auto reference_pair = selected_evaluator.evaluate_reference_pair(
+            deep_pot, *reference, owners, types);
+        residual = std::move(reference_pair[0]);
+        const auto& selected_reference = reference_pair[1];
+        reference_energies[0] = residual.energy;
+        reference_energies[1] = selected_reference.energy;
+        residual.energy -= selected_reference.energy;
+        for (int i = 0; i < 3 * n; ++i) {
+          residual.force[i] -= selected_reference.force[i];
+        }
+        for (int d = 0; d < 9; ++d) {
+          residual.virial[d] -= selected_reference.virial[d];
+        }
       }
     }
   } catch (const std::exception& e) {
@@ -377,7 +400,8 @@ bool PairDeepMDKokkos<DeviceType>::compute_pimd_reuse() {
   MPI_Bcast(&residual.energy, 1, MPI_DOUBLE, 0, universe->uworld);
   MPI_Bcast(residual.force.data(), 3 * n, MPI_DOUBLE, 0, universe->uworld);
   MPI_Bcast(residual.virial.data(), 9, MPI_DOUBLE, 0, universe->uworld);
-  MPI_Bcast(reference_energies, 2, MPI_DOUBLE, 0, universe->uworld);
+  if (reuse_mode == 1)
+    MPI_Bcast(reference_energies, 2, MPI_DOUBLE, 0, universe->uworld);
 
   mark_phase(2);
   Evaluation result;
@@ -474,7 +498,7 @@ bool PairDeepMDKokkos<DeviceType>::compute_pimd_reuse() {
   mark_phase(4);
   ++reuse_stats[1];
   ++reuse_stats[3];
-  reuse_stats[4] += !owners.empty();
+  reuse_stats[4] += reuse_mode == 1 && !owners.empty();
   reuse_stats[5] += !owners.empty();
   reuse_stats[7] = work[0];
   reuse_stats[8] = work[1];

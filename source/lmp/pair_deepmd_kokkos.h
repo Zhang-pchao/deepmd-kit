@@ -101,6 +101,7 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // bead, verification full, actual fallback, graph builds. Counts are per MPI
   // rank.
   std::array<double, 8> reuse_calls{};
+  double reuse_complement_calls = 0.0;
   std::array<double, 5> reuse_profile{};
   deepmd::selected_energy::ModelEvaluator<DeviceType> selected_evaluator;
 

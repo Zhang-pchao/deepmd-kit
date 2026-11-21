@@ -214,6 +214,27 @@ print "$(pe:%.17g) $(f_pi[1]:%.17g) $(f_pi[2]:%.17g) $(f_pi[4]:%.17g) $(f_pi[5]:
             )
             if len(calls) != beads * ranks:
                 raise AssertionError("Missing actual per-rank evaluation counters")
+            complement_lines = re.findall(
+                r"^PIMD_COMPLEMENT_REFERENCE_CALLS (.+)$",
+                (work / "stdout.log").read_text(),
+                re.M,
+            )
+            complement_calls = {}
+            if complement_lines:
+                if len(complement_lines) != beads * ranks:
+                    raise AssertionError("Missing complement-reference counters")
+                for line in complement_lines:
+                    rank, value = line.split()
+                    rank, value = int(rank), float(value)
+                    if (
+                        rank in complement_calls
+                        or not 0 <= rank < beads * ranks
+                        or not np.isfinite(value)
+                        or value < 0
+                        or value != int(value)
+                    ):
+                        raise AssertionError("Invalid complement-reference counter")
+                    complement_calls[rank] = value
             actual = {}
             for line in calls:
                 rank, *raw = line.split()
@@ -236,6 +257,11 @@ print "$(pe:%.17g) $(f_pi[1]:%.17g) $(f_pi[2]:%.17g) $(f_pi[4]:%.17g) $(f_pi[5]:
                 split, fallback = legacy[1], legacy[2]
                 values = actual[rank]
                 sequence = values[0]
+                complement = complement_calls.get(rank, 0)
+                if complement_lines:
+                    wanted = split if mode == "fallback" and rank == 0 else 0
+                    if complement != wanted:
+                        raise AssertionError("Wrong complement-reference ownership")
                 if sequence < args.steps + 3:
                     raise AssertionError("Missing unique force-call sequence")
                 expected = np.zeros(8)
@@ -247,9 +273,9 @@ print "$(pe:%.17g) $(f_pi[1]:%.17g) $(f_pi[2]:%.17g) $(f_pi[4]:%.17g) $(f_pi[5]:
                         raise AssertionError("Force-call sequence does not balance")
                     expected[1] = expected[6] = fallback
                     if rank == 0:
-                        expected[2] = split
+                        expected[2] = split - complement
                         expected[3] = legacy[4]
-                        expected[7] += 2 * split
+                        expected[7] += 2 * split - complement
                     if rank % ranks == 0:
                         expected[4] = legacy[5]
                         expected[5] = legacy[9]

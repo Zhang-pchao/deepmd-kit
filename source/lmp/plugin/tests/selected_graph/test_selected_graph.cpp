@@ -28,9 +28,12 @@ void compare(DeviceSelection<Device>& candidate,
     types[i] = i % 2;
   }
   const auto reference = build(geometry, owners);
-  EXPECT_EQ(candidate.affected_owners(geometry, owners),
+  const Neighborhood device_geometry(geometry.positions(), geometry.box(),
+                                     geometry.periodic(), geometry.cutoff(),
+                                     false);
+  EXPECT_EQ(candidate.affected_owners(device_geometry, owners),
             affected_owners({geometry}, owners));
-  candidate.build_impl(geometry, owners, types, false, full);
+  candidate.build_impl(device_geometry, owners, types, false, full);
   ASSERT_EQ(candidate.owned, reference.owned);
   ASSERT_EQ(candidate.node_count, reference.nodes.size());
   ASSERT_EQ(candidate.edge_count, reference.destination_ptr.back());

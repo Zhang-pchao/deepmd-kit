@@ -211,9 +211,13 @@ The selection is rebuilt at every force call, including repeated calls at the
 same timestep. It is not a cached force, a separate force field, or a physical
 boundary on the reaction.
 
-This initial adapter admits audited, one-hop DPA4C canonical FP32 exported
-models with extensive differentiable atomic energies, no message passing, spin,
-conditional inputs, exclusions, bridging or unrecognized extra energy terms.
+This adapter admits audited one-hop DPA4C canonical FP32 exports with
+extensive differentiable atomic energies. It also permits the fixed neutral
+singlet condition [0, 1] folded into the type and pair tables of a compressed
+export. Every selected graph uses the condition from the complete frame.
+Message passing, a spin vector input, dynamic frame and atom conditions,
+exclusions, bridging and unrecognized extra energy terms fall outside this
+adapter's scope.
 It requires an orthorhombic fixed cell whose periodic dimensions exceed twice
 the cutoff, consecutive stable atom IDs, and no NULL atom types. Per-atom
 energy/virial requests use the full path in fallback mode and are rejected in
@@ -277,6 +281,21 @@ no extra synchronization or model evaluation is inserted by profiling. The full
 mode bypasses reuse and leaves these arrays zero. Early fallbacks are counted in
 `pimd_reuse_stats` and may leave incomplete phase totals.
 
+
+The `fallback` reuse path evaluates the unaffected complement directly:
+`E_B(C) + E_A(X_b)`, with `B` the complement of the affected energy centers
+`A`. The reference leader evaluates `E_B(C)` once per force call, including all
+coordinate derivatives. The `verify` path retains the independent
+`E(C) - E_A(C) + E_A(X_b)` calculation and its full-energy correction check.
+Both use the same conservative affected-owner union over the centroid and
+all physical beads. GPU graph evaluation does not build redundant host bins,
+and only the reference leader prepares the reference neighborhood.
+
+The scalar extraction `pimd_complement_reference_calls` counts actual
+complement model evaluations on each rank. It is zero outside the reference
+leader or when full/verify evaluation is used. These calls are separate from
+the full-reference and selected-reference entries below; the graph-build
+entry includes the complement graph.
 
 For auditable benchmark accounting, `pimd_reuse_calls` returns eight cumulative
 per-rank doubles: force-call sequence, ordinary full-bead calls, full-reference

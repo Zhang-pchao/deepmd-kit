@@ -51,6 +51,12 @@ int main(int argc, char** argv) {
         std::snprintf(line + offset, sizeof(line) - offset, " %.17g", stats[i]);
   }
   std::printf("%s\n", line);
+  auto* complement = static_cast<double*>(
+      lammps_extract_pair(lmp, "pimd_complement_reference_calls"));
+  if (complement) {
+    std::printf("PIMD_COMPLEMENT_REFERENCE_CALLS %d %.17g\n", rank,
+                *complement);
+  }
   auto* calls =
       static_cast<double*>(lammps_extract_pair(lmp, "pimd_reuse_calls"));
   if (calls) {

@@ -29,6 +29,7 @@ template <class DeviceType>
 class ModelEvaluator {
  public:
   void use_device_graph(bool enabled) { device_graph_enabled_ = enabled; }
+  bool uses_device_graph() const { return device_graph_enabled_; }
   std::vector<int> affected_owners(const Neighborhood& geometry,
                                    const std::vector<int>& support) {
     if (device_graph_enabled_) {

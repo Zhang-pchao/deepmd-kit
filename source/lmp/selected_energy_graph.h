@@ -27,7 +27,8 @@ class Neighborhood {
   Neighborhood(const std::vector<Position>& positions,
                const Position& box,
                const std::array<bool, 3>& periodic,
-               double cutoff)
+               double cutoff,
+               bool build_host_bins = true)
       : positions_(positions), box_(box), periodic_(periodic), cutoff_(cutoff) {
     if (!std::isfinite(cutoff) || cutoff <= 0.0 ||
         positions.size() >
@@ -48,8 +49,11 @@ class Neighborhood {
         width_[d] = box[d] / cells_[d];
       }
     }
-    for (int i = 0; i < size(); ++i) {
-      bins_[key(positions_[i])].push_back(i);
+    host_bins_built_ = build_host_bins;
+    if (build_host_bins) {
+      for (int i = 0; i < size(); ++i) {
+        bins_[key(positions_[i])].push_back(i);
+      }
     }
   }
 
@@ -60,6 +64,9 @@ class Neighborhood {
   double cutoff() const { return cutoff_; }
 
   std::vector<std::pair<int, Position>> neighbors(int center) const {
+    if (!host_bins_built_) {
+      throw std::logic_error("Host neighbor bins were not requested");
+    }
     if (center < 0 || center >= size()) {
       throw std::out_of_range("Invalid energy center");
     }
@@ -112,6 +119,7 @@ class Neighborhood {
   }
 
  private:
+  bool host_bins_built_ = false;
   std::array<int, 3> key(const Position& x) const {
     std::array<int, 3> result;
     for (int d = 0; d < 3; ++d) {
